@@ -164,7 +164,7 @@ main() {
         input_managr
 
         #create vm
-	sudo VBoxManage createvm --name $vm_name --ostype "RedHat_64" --register
+	VBoxManage createvm --name $vm_name --ostype "RedHat_64" --register
         if [ $? -ne 0 ]; then 
 		failure_msg "[$LINENO] create vm failure"
         fi 
