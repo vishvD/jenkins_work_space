@@ -1,57 +1,43 @@
 #!/bin/bash
-#******************************************************************************************************
-#                                                                                                     *
-#                                                                                                     *
-#                                                                                                     *
-#******************************************************************************************************
-<<cmt
-vm_name=""
-vm_img_path=""
-qcow2_path=""
-vm_ip=""
-vm_ram=0
-img_name=cpi_install.vdi
-vm_priv_ip=""
-cmt
 
 declare -A __gDploy_cfg=( [vm_name]=""
                 [vm_img_path]=""
                 [qcow2_path]=""
-                [img_name]="cpi_install.vdi"
+                [img_name]="cpi_install"
+                [qcow_name]="musashi-deployer.qcow2"
                 [vm_ip]=""
                 [vm_ram]=0
                 [vm_priv_ip]=""
+                [rel_ver]="v2.0.1-b"
+                [debug]=0
                 [build_no]="")
 
+qcow_build_path=""
+deployer_img=""
 #__gDploy_cfg[img_name]="cpi_install.vdi"
 qemu_img_convert_qcow2_vdi(){
 #	set -x
-        if [ -z ${__gDploy_cfg[qcow2_path]} ]; then
-		failure_msg "[$LINENO] qcow2 image  missing"
-        else
-          echo "qcow2 : ${__gDploy_cfg[qcow2_path]}"
+        if [ ! -f $qcow_build_path/${__gDploy_cfg[qcow_name]} ] ; then 
+		failure_msg "[$LINENO] qcow2 img can't be found at $qcow_build_path"
         fi
-        if [ ! -f ${__gDploy_cfg[qcow2_path]} ] ; then 
-		failure_msg "[$LINENO] qcow2 img can't be found at ${__gDploy_cfg[qcow2_path]}"
-        fi
-        echo "vm image: ${__gDploy_cfg[img_name]}"
-        echo "'${__gDploy_cfg[vm_img_path]}/${__gDploy_cfg[img_name]}'"
-        if [ ! -f ${__gDploy_cfg[vm_img_path]}/${__gDploy_cfg[img_name]} ]; then 
-        echo -e "\e[33mcreating vdi image from qcow2........ \e[0m"
+        echo "[$LINENO] vm image: $deployer_img"
+        echo "[$LINENO] '${__gDploy_cfg[vm_img_path]}/$deployer_img'"
+        if [ ! -f ${__gDploy_cfg[vm_img_path]}/$deployer_img ]; then 
+        echo -e "\e[33m[$LINENO] creating vdi image from qcow2........ \e[0m"
 	sudo chown jenkins: ${__gDploy_cfg[vm_img_path]}
-	qemu-img convert -f qcow2 ${__gDploy_cfg[qcow2_path]} -O vdi ${__gDploy_cfg[vm_img_path]}/${__gDploy_cfg[img_name]}
+	qemu-img convert -f qcow2 $qcow_build_path/${__gDploy_cfg[qcow_name]} -O vdi ${__gDploy_cfg[vm_img_path]}/$deployer_img
         if [ $? -ne 0 ]; then failure_msg "failed to convert qcow2-->vdi"
 	else
-		echo "vdi image ${__gDploy_cfg[vm_img_path]}/${__gDploy_cfg[img_name]} created"
+		echo "[$LINENO] vdi image ${__gDploy_cfg[vm_img_path]}/$deployer_img created"
 	fi
         fi
 #        set +x
 }
-usage() { echo "Usage: $0 [-v <string>] [-p <string>] [-i <string>] [-r <integer>]" 1>&2; exit 1; }
+usage() { echo "Usage: $0 [-v <string>] [-p <string>] [-q <string>] [-i <string>] [-r <integer>] [-b <string>] [-d <number>]" 1>&2; exit 1; }
 
 #parse cli arguments
 cli_parser(){
-	while getopts ":v:p:q:i:t:r:" opt; do
+	while getopts ":v:p:q:i:t:r:b:d:" opt; do
 		case $opt in 
 		v)   #vm name
 			if [ $OPTARG = -* ]; then
@@ -95,8 +81,23 @@ cli_parser(){
 			fi
 		__gDploy_cfg[vm_ram]=$((OPTARG))
 		;;
+		d) #debug
+			if [ $OPTARG = -* ]; then
+				((OPTIND--))
+				continue
+			fi
+		__gDploy_cfg[debug]=$((OPTARG))
+		;;
+		b) #build number
+			if [ $OPTARG = -* ]; then
+				((OPTIND--))
+				continue
+			fi
+		__gDploy_cfg[build_no]=$((OPTARG))
+		;;
 		\?)
-			echo "invalid opt"
+			echo "[$LINENO] invalid opt"
+                        usage
 			exit
 		;;
 esac
@@ -112,34 +113,42 @@ failure_msg() {
 
 #validate CLI args
 input_managr(){
-        if [ -z ${__gDploy_cfg[vm_img_path]} ]; then
-		failure_msg "vm image path missing"
+        if [ -z ${__gDploy_cfg[build_no]} ]; then
+           failure_msg "build number missing..."
         else
-          echo -e "vm image path : \e[33m${__gDploy_cfg[vm_img_path]}\e[0m"
+          echo -e "[$LINENO] build number:\e[33m${__gDploy_cfg[build_no]}\e[0m"
         fi
-	if [ ! -f ${__gDploy_cfg[vm_img_path]}/${__gDploy_cfg[img_name]} ] ; then 
-		failure_msg "[$LINENO] vdi img can't be found at ${__gDploy_cfg[vm_img_path]}/${__gDploy_cfg[img_name]}"
-	fi
+        if [ -z ${__gDploy_cfg[vm_img_path]} ]; then
+		failure_msg "[$LINENO] vm image path missing"
+        else
+          echo -e "[$LINENO] vm image path : \e[33m${__gDploy_cfg[vm_img_path]}\e[0m"
+        fi
+        if [ -z ${__gDploy_cfg[qcow2_path]} ]; then
+		failure_msg "[$LINENO] qcow image path  missing"
+        else
+          echo -e "[$LINENO] qcow image path\e[33m${__gDploy_cfg[qcow2_path]}\e[0m"
+        fi
         if [ -z ${__gDploy_cfg[vm_name]} ]; then
 		failure_msg "[$LINENO] vm name missing"
         else
-          echo -e "vm name : \e[33m${__gDploy_cfg[vm_name]}\e[0m"
+          echo -e "[$LINENO] vm name : \e[33m${__gDploy_cfg[vm_name]}\e[0m"
         fi
         if [ -z ${__gDploy_cfg[vm_ip]} ]; then
                  failure_msg "[$LINENO] vm_ip missing"
         else 
-          echo -e  "vm ip address : \e[33m${__gDploy_cfg[vm_ip]}\e[0m"
+          echo -e  "[$LINENO] vm ip address : \e[33m${__gDploy_cfg[vm_ip]}\e[0m"
         fi
         if [ -z ${__gDploy_cfg[vm_priv_ip]} ]; then
                  failure_msg "[$LINENO] vm_priv_ip missing"
         else 
-          echo -e "vm private ip address : \e[33m${__gDploy_cfg[vm_priv_ip]}\e[0m"
+          echo -e "[$LINENO] vm private ip address : \e[33m${__gDploy_cfg[vm_priv_ip]}\e[0m"
         fi
         if [ ${__gDploy_cfg[vm_ram]} -eq 0 ] ; then
                 failure_msg "[$LINENO] vm_ram missing"
         else 
-          echo -e "vm memory : \e[33m${__gDploy_cfg[vm_ram]}\e[0m"
+          echo -e "[$LINENO] vm memory : \e[33m${__gDploy_cfg[vm_ram]}\e[0m"
         fi
+        if [ ${__gDploy_cfg[debug]} -eq 1 ]; then echo -e "[$LINENO] debug: \e[33mEnabled";else echo -e "[$LINENO] debug: Disabled\e[0m"; fi
 }
 
 #	if [ $? -ne 0 ] ; then  failure_msg "[$LINENO] ip addr flush dev enp0s3"; fi
@@ -153,7 +162,7 @@ ip_manager() {
         echo "DEVICE=enp0s3" | sudo tee -a /etc/sysconfig/network-scripts/ifcfg-enp0s3
         echo "ONBOOT=yes" | sudo tee -a /etc/sysconfig/network-scripts/ifcfg-enp0s3
         echo "TYPE=Ethernet" | sudo tee -a  /etc/sysconfig/network-scripts/ifcfg-enp0s3
-        echo "IPADDR=${__gDploy_cfg[vm_ip]}|" | sudo tee -a /etc/sysconfig/network-scripts/ifcfg-enp0s3
+        echo "IPADDR=${__gDploy_cfg[vm_ip]}" | sudo tee -a /etc/sysconfig/network-scripts/ifcfg-enp0s3
         echo "PREFIX=24" | sudo tee -a /etc/sysconfig/network-scripts/ifcfg-enp0s3
         sudo ifdown enp0s3
         sudo ifup enp0s3
@@ -185,7 +194,7 @@ _storage_ctl_attch(){
 		failure_msg "[$LINENO] storagectl failure" 
 	fi 
         #@ttach img path
- 	VBoxManage storageattach ${__gDploy_cfg[vm_name]}  --storagectl "SATA Controller" --port 0 --device 0 --type hdd --medium ${__gDploy_cfg[vm_img_path]}/${__gDploy_cfg[img_name]}
+ 	VBoxManage storageattach ${__gDploy_cfg[vm_name]}  --storagectl "SATA Controller"  --port 0 --device 0 --type hdd --medium ${__gDploy_cfg[vm_img_path]}/$deployer_img
 	if [ $? -ne 0 ] ; then 
 		failure_msg "[$LINENO] storageattach failure" 
 	fi 
@@ -205,7 +214,6 @@ _set_attr_vm() {
 	if [ $? -ne 0 ]; then
 		failure_msg "[$LINENO] failed on creating bridge adapter on eth0"
 	fi
-
         #@create a host only n/w on nic3 
 	VBoxManage modifyvm ${__gDploy_cfg[vm_name]} --hostonlyadapter3 vboxnet1
 	if [ $? -ne 0 ]; then
@@ -215,7 +223,6 @@ _set_attr_vm() {
 	if [ $? -ne 0 ]; then
 		failure_msg "[$LINENO] failed on creating host-only adapter on NIC3"
 	fi
-
         #@create a nat nw on nic2. do NAT port forwarding on port 2222
         VBoxManage modifyvm ${__gDploy_cfg[vm_name]} --nic2 nat --nictype2 82540EM --cableconnected1 on
 	if [ $? -ne 0 ]; then
@@ -233,16 +240,24 @@ _start_vm(){
 	fi 
 
 }
+nomenclature(){
+	qcow_build_path=${__gDploy_cfg[qcow2_path]}/${__gDploy_cfg[rel_ver]}${__gDploy_cfg[build_no]}
+	echo -e "[$LINENO] qcow build path:\e[33m $qcow_build_path\e[0m"
+	deployer_img=${__gDploy_cfg[img_name]}_${__gDploy_cfg[rel_ver]}${__gDploy_cfg[build_no]}.vdi
+	echo -e "[$LINENO] vdi Image:\e[33m$deployer_img\e[0m"
+}
+
 _pre_processng(){
         cli_parser $*
-        qemu_img_convert_qcow2_vdi
         input_managr
+        nomenclature
+        qemu_img_convert_qcow2_vdi
 }
 #after vm init ..call ip_manage to configure
 #IP address on proper interfaces 
 _post_processng(){
         i=1
-        echo -e "\e[33mbooting  ${__gDploy_cfg[vm_name]} ....."
+        echo -e "\e[33m[$LINENO] booting  ${__gDploy_cfg[vm_name]} ....."
         while [ $i -ne 0 ] ; do
         sshpass -p "deploy" ssh -p 2222 -t deploy@localhost -t "exit" 
         i=$?
@@ -252,10 +267,10 @@ _post_processng(){
 	ip_manager 
 }
 #main function ...everything will be start from here only
-main() {
+__Main__() {
         echo -e "\e[32m-----------------------------------------------------------------------------"
         echo -e "\e[36m            nTI cONTINUOUS iNTEGRATION sERVER @deploymachine                 "
-        echo -e "\e[32m-----------------------------------------------------------------------------\e[0m"
+        echo -e "\e[32m----------------------------------------------------------------------------\e[0m"
          
         _pre_processng $*
          export DISPLAY=:0.0
@@ -265,7 +280,13 @@ main() {
 	_set_attr_vm
 	_start_vm
         _post_processng
-        echo -e "\e[32m fINISHED dEPLOY iNSTALLATION IP:\e[34m${__gDploy_cfg[vm_ip]}\e[0m"
+        echo -e "\e[32m[$LINENO] fINISHED dEPLOY iNSTALLATION IP:\e[34m${__gDploy_cfg[vm_ip]}\e[0m"
 } 
-main $* 
+if [ ${__gDploy_cfg[debug]} -eq 1 ]; then
+set -x
+__Main__ $* 
+set +x
+else
+__Main__ $*
+fi
         
