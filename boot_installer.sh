@@ -93,7 +93,7 @@ cli_parser(){
 				((OPTIND--))
 				continue
 			fi
-		__gDploy_cfg[build_no]=$((OPTARG))
+		__gDploy_cfg[build_no]=$OPTARG
 		;;
 		\?)
 			echo "[$LINENO] invalid opt"
